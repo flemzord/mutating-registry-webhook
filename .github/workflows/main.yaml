@@ -1,0 +1,277 @@
+name: Main CI
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+env:
+  GO_VERSION: '1.22'
+  GOLANGCI_LINT_VERSION: v1.54.2
+  KIND_VERSION: v0.20.0
+  KUBERNETES_VERSION: v1.28.0
+
+jobs:
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Setup Go
+      uses: actions/setup-go@v5
+      with:
+        go-version: ${{ env.GO_VERSION }}
+
+    - name: Run golangci-lint
+      uses: golangci/golangci-lint-action@v3
+      with:
+        version: ${{ env.GOLANGCI_LINT_VERSION }}
+
+  test:
+    name: Unit Tests
+    runs-on: ubuntu-latest
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Setup Go
+      uses: actions/setup-go@v5
+      with:
+        go-version: ${{ env.GO_VERSION }}
+
+    - name: Run tests
+      run: |
+        go mod download
+        make test
+
+    - name: Upload coverage
+      uses: codecov/codecov-action@v3
+      with:
+        file: ./cover.out
+
+  build:
+    name: Build
+    runs-on: ubuntu-latest
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Setup Go
+      uses: actions/setup-go@v5
+      with:
+        go-version: ${{ env.GO_VERSION }}
+
+    - name: Build manager
+      run: make build
+
+    - name: Build docker image
+      run: make docker-build IMG=test/mutating-registry-webhook:test
+
+  manifests:
+    name: Verify Manifests
+    runs-on: ubuntu-latest
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Setup Go
+      uses: actions/setup-go@v5
+      with:
+        go-version: ${{ env.GO_VERSION }}
+
+    - name: Generate manifests
+      run: make manifests
+
+    - name: Check for uncommitted changes
+      run: |
+        if [ -n "$(git status --porcelain)" ]; then
+          echo "Uncommitted changes detected. Please run 'make manifests' and commit the changes."
+          git diff
+          exit 1
+        fi
+
+  helm-lint:
+    name: Helm Chart Lint
+    runs-on: ubuntu-latest
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Setup Helm
+      uses: azure/setup-helm@v3
+      with:
+        version: 'v3.13.0'
+
+    - name: Lint Helm chart
+      run: |
+        helm lint dist/chart
+
+    - name: Template Helm chart
+      run: |
+        helm template test dist/chart
+
+  e2e-kind:
+    name: E2E Tests (Kind)
+    runs-on: ubuntu-latest
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Setup Go
+      uses: actions/setup-go@v5
+      with:
+        go-version: ${{ env.GO_VERSION }}
+
+    - name: Setup Kind
+      run: |
+        curl -Lo ./kind https://kind.sigs.k8s.io/dl/${KIND_VERSION}/kind-linux-amd64
+        chmod +x ./kind
+        sudo mv ./kind /usr/local/bin/kind
+
+    - name: Create Kind cluster
+      run: |
+        cat <<EOF | kind create cluster --config=-
+        kind: Cluster
+        apiVersion: kind.x-k8s.io/v1alpha4
+        nodes:
+        - role: control-plane
+          image: kindest/node:${KUBERNETES_VERSION}
+        EOF
+
+    - name: Install cert-manager
+      run: |
+        kubectl apply -f https://github.com/cert-manager/cert-manager/releases/download/v1.13.0/cert-manager.yaml
+        kubectl wait --for=condition=Available --timeout=300s deployment --all -n cert-manager
+
+    - name: Build and load Docker image
+      run: |
+        make docker-build IMG=mutating-registry-webhook:e2e
+        kind load docker-image mutating-registry-webhook:e2e
+
+    - name: Run E2E tests
+      run: |
+        make test-e2e
+
+    - name: Collect logs on failure
+      if: failure()
+      run: |
+        echo "=== Controller logs ==="
+        kubectl logs -n mutating-registry-webhook-system deployment/mutating-registry-webhook-controller-manager || true
+        echo "=== Events ==="
+        kubectl get events --all-namespaces --sort-by='.lastTimestamp' || true
+
+  helm-e2e:
+    name: Helm Chart E2E
+    runs-on: ubuntu-latest
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Setup Go
+      uses: actions/setup-go@v5
+      with:
+        go-version: ${{ env.GO_VERSION }}
+
+    - name: Setup Kind
+      run: |
+        curl -Lo ./kind https://kind.sigs.k8s.io/dl/${KIND_VERSION}/kind-linux-amd64
+        chmod +x ./kind
+        sudo mv ./kind /usr/local/bin/kind
+
+    - name: Create Kind cluster
+      run: |
+        kind create cluster
+
+    - name: Build and load Docker image
+      run: |
+        make docker-build IMG=mutating-registry-webhook:v0.1.0
+        kind load docker-image mutating-registry-webhook:v0.1.0
+
+    - name: Setup Helm
+      run: |
+        curl https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
+
+    - name: Install cert-manager
+      run: |
+        helm repo add jetstack https://charts.jetstack.io
+        helm repo update
+        helm install cert-manager jetstack/cert-manager \
+          --namespace cert-manager \
+          --create-namespace \
+          --set crds.enabled=true \
+          --wait
+
+    - name: Install Helm chart
+      run: |
+        helm install test-release ./dist/chart \
+          --create-namespace \
+          --namespace mutating-registry-webhook-system \
+          --set controllerManager.container.image.repository=mutating-registry-webhook \
+          --set controllerManager.container.image.tag=v0.1.0 \
+          --wait
+
+    - name: Verify installation
+      run: |
+        helm status test-release --namespace mutating-registry-webhook-system
+        kubectl get pods -n mutating-registry-webhook-system
+        kubectl get crd registryrewriterules.dev.flemzord.fr
+
+    - name: Test webhook functionality
+      run: |
+        # Create a test registry rewrite rule
+        kubectl apply -f config/samples/dev_v1alpha1_registryrewriterule.yaml
+        sleep 5
+        
+        # Create a test pod
+        cat <<EOF | kubectl apply -f -
+        apiVersion: v1
+        kind: Pod
+        metadata:
+          name: test-pod
+          namespace: default
+        spec:
+          containers:
+          - name: nginx
+            image: nginx:latest
+        EOF
+        
+        # Wait for pod to be created
+        kubectl wait --for=condition=Ready --timeout=30s pod/test-pod || true
+        
+        # Check if image was rewritten
+        ACTUAL_IMAGE=$(kubectl get pod test-pod -o jsonpath='{.spec.containers[0].image}')
+        echo "Actual image: $ACTUAL_IMAGE"
+        
+        # Cleanup
+        kubectl delete pod test-pod --ignore-not-found=true
+
+  codeql:
+    name: CodeQL Analysis
+    runs-on: ubuntu-latest
+    permissions:
+      actions: read
+      contents: read
+      security-events: write
+    strategy:
+      fail-fast: false
+      matrix:
+        language: [ 'go' ]
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+
+    - name: Initialize CodeQL
+      uses: github/codeql-action/init@v2
+      with:
+        languages: ${{ matrix.language }}
+
+    - name: Autobuild
+      uses: github/codeql-action/autobuild@v2
+
+    - name: Perform CodeQL Analysis
+      uses: github/codeql-action/analyze@v2
+      with:
+        category: "/language:${{matrix.language}}"
