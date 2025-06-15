@@ -1,0 +1,59 @@
+# Binaries for programs and plugins
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+bin/
+testbin/
+
+# Test binary, built with `go test -c`
+*.test
+
+# Output of the go coverage tool
+*.out
+
+# Go workspace file
+go.work
+
+# Kubernetes
+*.yaml-e
+
+# Kubebuilder
+/config/crd/bases/*.yaml
+/config/rbac/role.yaml
+/config/manager/controller_manager_config.yaml
+/config/webhook/manifests.yaml
+
+# Build
+dist/
+/manager
+/mutating-registry-webhook
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Temporary files
+*.tmp
+*.bak
+*.log
+
+# Helm
+*.tgz
+charts/*.tgz
+
+# Coverage
+cover.out
+coverage.html
+
+# Local development
+kubebuilder
+local-bin/

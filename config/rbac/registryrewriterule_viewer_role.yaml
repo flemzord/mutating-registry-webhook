@@ -1,0 +1,29 @@
+# This rule is not used by the project mutating-registry-webhook itself.
+# It is provided to allow the cluster admin to help manage permissions for users.
+#
+# Grants read-only access to dev.dev.flemzord.fr resources.
+# This role is intended for users who need visibility into these resources
+# without permissions to modify them. It is ideal for monitoring purposes and limited-access viewing.
+
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  labels:
+    app.kubernetes.io/name: mutating-registry-webhook
+    app.kubernetes.io/managed-by: kustomize
+  name: registryrewriterule-viewer-role
+rules:
+- apiGroups:
+  - dev.dev.flemzord.fr
+  resources:
+  - registryrewriterules
+  verbs:
+  - get
+  - list
+  - watch
+- apiGroups:
+  - dev.dev.flemzord.fr
+  resources:
+  - registryrewriterules/status
+  verbs:
+  - get

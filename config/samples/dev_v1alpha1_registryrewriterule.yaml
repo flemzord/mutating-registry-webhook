@@ -1,0 +1,24 @@
+apiVersion: dev.flemzord.fr/v1alpha1
+kind: RegistryRewriteRule
+metadata:
+  labels:
+    app.kubernetes.io/name: mutating-registry-webhook
+    app.kubernetes.io/managed-by: kustomize
+  name: docker-hub-to-ecr
+spec:
+  rules:
+    # Redirect Docker Hub images to ECR pull-through cache
+    - match: '^docker\.io/(.*)'
+      replace: '111122223333.dkr.ecr.eu-west-1.amazonaws.com/dockerhub/$1'
+    
+    # Handle images without explicit registry (defaults to docker.io)
+    - match: '^([^/]+/[^/]+)$'
+      replace: '111122223333.dkr.ecr.eu-west-1.amazonaws.com/dockerhub/$1'
+    
+    # Redirect GCR images
+    - match: '^gcr\.io/([^/]+)/(.+)'
+      replace: '111122223333.dkr.ecr.eu-west-1.amazonaws.com/gcr/$1/$2'
+    
+    # Redirect Quay.io images
+    - match: '^quay\.io/(.*)'
+      replace: '111122223333.dkr.ecr.eu-west-1.amazonaws.com/quay/$1'

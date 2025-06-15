@@ -1,0 +1,4 @@
+## Append samples of your project ##
+resources:
+- dev_v1alpha1_registryrewriterule.yaml
+# +kubebuilder:scaffold:manifestskustomizesamples
