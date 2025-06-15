@@ -1,0 +1,137 @@
+version: 2
+
+dist: .goreleaser
+project_name: mutating-registry-webhook
+
+builds:
+  - id: manager
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - linux
+      - darwin
+    goarch:
+      - amd64
+      - arm64
+    binary: manager
+    main: ./cmd/main.go
+    ldflags:
+      - -s -w
+      - -X main.version={{.Version}}
+      - -X main.commit={{.Commit}}
+      - -X main.date={{.Date}}
+
+archives:
+  - id: binaries
+    name_template: '{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}'
+    files:
+      - LICENSE
+      - README.md
+
+dockers:
+  - image_templates:
+      - "ghcr.io/flemzord/mutating-registry-webhook:{{ .Version }}-amd64"
+    use: buildx
+    dockerfile: Dockerfile
+    goos: linux
+    goarch: amd64
+    build_flag_templates:
+      - "--platform=linux/amd64"
+      - "--label=org.opencontainers.image.created={{.Date}}"
+      - "--label=org.opencontainers.image.revision={{.FullCommit}}"
+      - "--label=org.opencontainers.image.version={{.Version}}"
+      - "--label=org.opencontainers.image.source={{.GitURL}}"
+  
+  - image_templates:
+      - "ghcr.io/flemzord/mutating-registry-webhook:{{ .Version }}-arm64"
+    use: buildx
+    dockerfile: Dockerfile
+    goos: linux
+    goarch: arm64
+    build_flag_templates:
+      - "--platform=linux/arm64"
+      - "--label=org.opencontainers.image.created={{.Date}}"
+      - "--label=org.opencontainers.image.revision={{.FullCommit}}"
+      - "--label=org.opencontainers.image.version={{.Version}}"
+      - "--label=org.opencontainers.image.source={{.GitURL}}"
+
+docker_manifests:
+  - name_template: "ghcr.io/flemzord/mutating-registry-webhook:{{ .Version }}"
+    image_templates:
+      - "ghcr.io/flemzord/mutating-registry-webhook:{{ .Version }}-amd64"
+      - "ghcr.io/flemzord/mutating-registry-webhook:{{ .Version }}-arm64"
+  
+  - name_template: "ghcr.io/flemzord/mutating-registry-webhook:latest"
+    image_templates:
+      - "ghcr.io/flemzord/mutating-registry-webhook:{{ .Version }}-amd64"
+      - "ghcr.io/flemzord/mutating-registry-webhook:{{ .Version }}-arm64"
+    skip_push: auto
+
+checksum:
+  name_template: 'checksums.txt'
+
+snapshot:
+  version_template: "{{ .Tag }}-next"
+
+release:
+  github:
+    owner: flemzord
+    name: mutating-registry-webhook
+  draft: false
+  prerelease: auto
+  mode: append
+  header: |
+    ## What's Changed
+  footer: |
+    **Full Changelog**: https://github.com/flemzord/mutating-registry-webhook/compare/{{ .PreviousTag }}...{{ .Tag }}
+  
+  extra_files:
+    - glob: ./dist/install.yaml
+    - glob: ./dist/mutating-registry-webhook-*.tgz
+
+# Upload Helm chart as release artifact
+# The actual push to OCI registry will be done in GitHub Actions
+
+# Run additional scripts
+universal_binaries:
+  - replace: false
+
+# Announce releases
+announce:
+  skip: false
+
+changelog:
+  sort: asc
+  use: github
+  filters:
+    exclude:
+      - '^docs:'
+      - '^test:'
+      - '^chore:'
+      - '^ci:'
+  groups:
+    - title: 'Features'
+      regexp: '^.*?feat(\([[:word:]]+\))??!?:.+$'
+      order: 0
+    - title: 'Bug fixes'
+      regexp: '^.*?fix(\([[:word:]]+\))??!?:.+$'
+      order: 1
+    - title: 'Performance'
+      regexp: '^.*?perf(\([[:word:]]+\))??!?:.+$'
+      order: 2
+    - title: 'Refactors'
+      regexp: '^.*?refactor(\([[:word:]]+\))??!?:.+$'
+      order: 3
+    - title: Others
+      order: 999
+
+# Additional build hooks
+before:
+  hooks:
+    - go mod tidy
+    - go generate ./...
+    - make manifests
+    - make build-installer IMG=ghcr.io/flemzord/mutating-registry-webhook:{{ .Version }}
+    - ./hack/update-chart-version.sh {{ .Version }}
+    - helm package dist/chart --destination dist/
+

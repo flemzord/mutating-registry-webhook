@@ -96,8 +96,22 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: "go.mod"
+
       - name: Setup Helm
-        uses: azure/setup-helm@v3
+        uses: azure/setup-helm@v4
+
+      - name: Install Kubebuilder
+        run: |
+          curl -L -o kubebuilder "https://go.kubebuilder.io/dl/latest/$(go env GOOS)/$(go env GOARCH)"
+          chmod +x kubebuilder && sudo mv kubebuilder /usr/local/bin/
+
+      - name: Generate Helm chart
+        run: |
+          kubebuilder edit --plugins=helm/v1-alpha
 
       - name: Lint Helm chart
         run: |

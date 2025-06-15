@@ -27,6 +27,7 @@ go.work
 
 # Build
 dist/
+.goreleaser/
 /manager
 /mutating-registry-webhook
 
@@ -56,4 +57,4 @@ coverage.html
 
 # Local development
 kubebuilder
-local-bin/
+local-bin/dist/
