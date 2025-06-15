@@ -39,7 +39,6 @@ import (
 	admissionwebhook "sigs.k8s.io/controller-runtime/pkg/webhook/admission"
 
 	devv1alpha1 "github.com/flemzord/mutating-registry-webhook/api/v1alpha1"
-	"github.com/flemzord/mutating-registry-webhook/internal/controller"
 	webhookpkg "github.com/flemzord/mutating-registry-webhook/internal/webhook"
 	// +kubebuilder:scaffold:imports
 )
@@ -204,13 +203,8 @@ func main() {
 		os.Exit(1)
 	}
 
-	if err := (&controller.RegistryRewriteRuleReconciler{
-		Client: mgr.GetClient(),
-		Scheme: mgr.GetScheme(),
-	}).SetupWithManager(mgr); err != nil {
-		setupLog.Error(err, "unable to create controller", "controller", "RegistryRewriteRule")
-		os.Exit(1)
-	}
+	// Note: We don't need the default RegistryRewriteRuleReconciler since we're using
+	// the RulesWatcher to handle RegistryRewriteRule changes and invalidate the cache
 
 	// Setup the webhook
 	podMutator := &webhookpkg.PodMutator{
