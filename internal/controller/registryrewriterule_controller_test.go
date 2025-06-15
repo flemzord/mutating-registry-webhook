@@ -51,7 +51,14 @@ var _ = Describe("RegistryRewriteRule Controller", func() {
 						Name:      resourceName,
 						Namespace: "default",
 					},
-					// TODO(user): Specify other spec details if needed.
+					Spec: devv1alpha1.RegistryRewriteRuleSpec{
+						Rules: []devv1alpha1.Rule{
+							{
+								Match:   "^docker.io/(.*)$",
+								Replace: "my-registry.com/docker.io/$1",
+							},
+						},
+					},
 				}
 				Expect(k8sClient.Create(ctx, resource)).To(Succeed())
 			}

@@ -97,7 +97,7 @@ func init() {
 func (m *PodMutator) Handle(ctx context.Context, req admission.Request) admission.Response {
 	start := time.Now()
 	pod := &corev1.Pod{}
-	log := log.FromContext(ctx)
+	logger := log.FromContext(ctx)
 
 	// Record mutation duration
 	defer func() {
@@ -106,20 +106,20 @@ func (m *PodMutator) Handle(ctx context.Context, req admission.Request) admissio
 
 	err := m.decoder.Decode(req, pod)
 	if err != nil {
-		log.Error(err, "Failed to decode pod")
+		logger.Error(err, "Failed to decode pod")
 		return admission.Errored(http.StatusBadRequest, err)
 	}
 
 	// Check if mutation is disabled via annotation
 	if pod.Annotations != nil && pod.Annotations["rewrite-disabled"] == "true" {
-		log.Info("Skipping mutation, rewrite-disabled annotation found", "pod", pod.Name, "namespace", pod.Namespace)
+		logger.Info("Skipping mutation, rewrite-disabled annotation found", "pod", pod.Name, "namespace", pod.Namespace)
 		return admission.Allowed("rewrite disabled")
 	}
 
 	// Get current rules
 	rules, err := m.getRules(ctx)
 	if err != nil {
-		log.Error(err, "Failed to get rules")
+		logger.Error(err, "Failed to get rules")
 		// Don't fail the admission if we can't get rules
 		return admission.Allowed("failed to get rules")
 	}
@@ -137,7 +137,7 @@ func (m *PodMutator) Handle(ctx context.Context, req admission.Request) admissio
 		if newImage != container.Image {
 			pod.Spec.Containers[i].Image = newImage
 			mutated = true
-			log.Info("Mutated container image", "container", container.Name, "from", container.Image, "to", newImage)
+			logger.Info("Mutated container image", "container", container.Name, "from", container.Image, "to", newImage)
 		}
 	}
 
@@ -147,7 +147,7 @@ func (m *PodMutator) Handle(ctx context.Context, req admission.Request) admissio
 		if newImage != container.Image {
 			pod.Spec.InitContainers[i].Image = newImage
 			mutated = true
-			log.Info("Mutated init container image", "container", container.Name, "from", container.Image, "to", newImage)
+			logger.Info("Mutated init container image", "container", container.Name, "from", container.Image, "to", newImage)
 		}
 	}
 
@@ -157,7 +157,7 @@ func (m *PodMutator) Handle(ctx context.Context, req admission.Request) admissio
 		if newImage != container.Image {
 			pod.Spec.EphemeralContainers[i].Image = newImage
 			mutated = true
-			log.Info("Mutated ephemeral container image", "container", container.Name, "from", container.Image, "to", newImage)
+			logger.Info("Mutated ephemeral container image", "container", container.Name, "from", container.Image, "to", newImage)
 		}
 	}
 
@@ -168,7 +168,7 @@ func (m *PodMutator) Handle(ctx context.Context, req admission.Request) admissio
 	// Create the patch
 	marshaledPod, err := json.Marshal(pod)
 	if err != nil {
-		log.Error(err, "Failed to marshal mutated pod")
+		logger.Error(err, "Failed to marshal mutated pod")
 		return admission.Errored(http.StatusInternalServerError, err)
 	}
 
@@ -177,7 +177,7 @@ func (m *PodMutator) Handle(ctx context.Context, req admission.Request) admissio
 
 // mutateImage applies rules to an image and returns the mutated image
 func (m *PodMutator) mutateImage(ctx context.Context, image string, rules []compiledRule, pod *corev1.Pod) string {
-	log := log.FromContext(ctx)
+	logger := log.FromContext(ctx)
 
 	// Normalize image name (add docker.io prefix if needed)
 	normalizedImage := normalizeImage(image)
@@ -191,7 +191,7 @@ func (m *PodMutator) mutateImage(ctx context.Context, image string, rules []comp
 		// Apply regex
 		if rule.regex.MatchString(normalizedImage) {
 			newImage := rule.regex.ReplaceAllString(normalizedImage, rule.replace)
-			log.V(1).Info("Image matched rule", "image", normalizedImage, "match", rule.rule.Match, "newImage", newImage)
+			logger.V(1).Info("Image matched rule", "image", normalizedImage, "match", rule.rule.Match, "newImage", newImage)
 
 			// Extract registries for metrics
 			sourceReg := extractRegistry(normalizedImage)

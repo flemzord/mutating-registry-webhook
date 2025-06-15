@@ -36,8 +36,8 @@ type RulesWatcher struct {
 
 // Reconcile handles changes to RegistryRewriteRule resources
 func (r *RulesWatcher) Reconcile(ctx context.Context, req reconcile.Request) (reconcile.Result, error) {
-	log := log.FromContext(ctx)
-	log.Info("RegistryRewriteRule changed, invalidating cache", "name", req.Name)
+	logger := log.FromContext(ctx)
+	logger.Info("RegistryRewriteRule changed, invalidating cache", "name", req.Name)
 
 	// Check if the resource still exists
 	rule := &devv1alpha1.RegistryRewriteRule{}
@@ -45,9 +45,9 @@ func (r *RulesWatcher) Reconcile(ctx context.Context, req reconcile.Request) (re
 	if err != nil {
 		if errors.IsNotFound(err) {
 			// Resource was deleted
-			log.Info("RegistryRewriteRule deleted", "name", req.Name)
+			logger.Info("RegistryRewriteRule deleted", "name", req.Name)
 		} else {
-			log.Error(err, "Failed to get RegistryRewriteRule", "name", req.Name)
+			logger.Error(err, "Failed to get RegistryRewriteRule", "name", req.Name)
 			return reconcile.Result{}, err
 		}
 	}
@@ -64,7 +64,7 @@ func (r *RulesWatcher) Reconcile(ctx context.Context, req reconcile.Request) (re
 		rule.Status.LastUpdateTime = &now
 
 		if err := r.Status().Update(ctx, rule); err != nil {
-			log.Error(err, "Failed to update RegistryRewriteRule status", "name", req.Name)
+			logger.Error(err, "Failed to update RegistryRewriteRule status", "name", req.Name)
 			return reconcile.Result{}, err
 		}
 	}
