@@ -211,6 +211,13 @@ func main() {
 		Client: mgr.GetClient(),
 	}
 
+	// Inject the decoder
+	decoder := admissionwebhook.NewDecoder(scheme)
+	if err := podMutator.InjectDecoder(decoder); err != nil {
+		setupLog.Error(err, "unable to inject decoder into pod mutator")
+		os.Exit(1)
+	}
+
 	// Register the webhook
 	mgr.GetWebhookServer().Register("/mutate-v1-pod", &admissionwebhook.Webhook{
 		Handler: podMutator,
