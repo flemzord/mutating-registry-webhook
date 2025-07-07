@@ -55,7 +55,7 @@ var _ = Describe("PodMutator", func() {
 
 	Describe("normalizeImage", func() {
 		It("should add docker.io prefix to images without registry", func() {
-			Expect(normalizeImage("nginx:latest")).To(Equal("docker.io/nginx:latest"))
+			Expect(normalizeImage("nginx:latest")).To(Equal("docker.io/library/nginx:latest"))
 			Expect(normalizeImage("library/nginx")).To(Equal("docker.io/library/nginx"))
 		})
 
@@ -143,18 +143,18 @@ var _ = Describe("PodMutator", func() {
 			}
 
 			result := mutator.mutateImage(ctx, "nginx:latest", rules, pod)
-			Expect(result).To(Equal("ecr.aws/dockerhub/nginx:latest"))
+			Expect(result).To(Equal("ecr.aws/dockerhub/library/nginx:latest"))
 		})
 
 		It("should respect rule priority", func() {
 			rules := []compiledRule{
 				{
 					rule: devv1alpha1.Rule{
-						Match:    `^docker\.io/nginx.*`,
+						Match:    `^docker\.io/library/nginx.*`,
 						Replace:  `special-registry/nginx`,
 						Priority: 100,
 					},
-					regex:   regexp.MustCompile(`^docker\.io/nginx.*`),
+					regex:   regexp.MustCompile(`^docker\.io/library/nginx.*`),
 					replace: `special-registry/nginx`,
 				},
 				{
@@ -190,12 +190,22 @@ func TestNormalizeImage(t *testing.T) {
 		{
 			name:     "simple image without registry",
 			input:    "nginx",
-			expected: "docker.io/nginx",
+			expected: "docker.io/library/nginx",
 		},
 		{
 			name:     "image with tag without registry",
 			input:    "nginx:latest",
-			expected: "docker.io/nginx:latest",
+			expected: "docker.io/library/nginx:latest",
+		},
+		{
+			name:     "official image without tag",
+			input:    "caddy",
+			expected: "docker.io/library/caddy",
+		},
+		{
+			name:     "official image with tag",
+			input:    "redis:alpine",
+			expected: "docker.io/library/redis:alpine",
 		},
 		{
 			name:     "image with namespace without registry",

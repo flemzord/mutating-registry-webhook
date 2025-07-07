@@ -300,8 +300,14 @@ func normalizeImage(image string) string {
 		return image
 	}
 
-	// Add docker.io prefix
-	return "docker.io/" + image
+	// Check if image already has a namespace (contains /)
+	if regexp.MustCompile(`^[^/]+/`).MatchString(image) {
+		// Image has namespace, just add docker.io prefix
+		return "docker.io/" + image
+	}
+
+	// Image is a Docker official image without namespace, add docker.io/library prefix
+	return "docker.io/library/" + image
 }
 
 // InjectDecoder injects the decoder
