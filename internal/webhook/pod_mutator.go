@@ -290,13 +290,23 @@ func (m *PodMutator) getRules(ctx context.Context) ([]compiledRule, error) {
 
 // normalizeImage adds docker.io prefix to images without registry
 func normalizeImage(image string) string {
-	// If image already has a registry, return as-is
-	if regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9-_.]*\.[a-zA-Z]{2,}/`).MatchString(image) {
+	// If it's a localhost image, return as-is
+	if regexp.MustCompile(`^localhost(:[0-9]+)?/`).MatchString(image) {
 		return image
 	}
 
-	// If it's a localhost image, return as-is
-	if regexp.MustCompile(`^localhost(:[0-9]+)?/`).MatchString(image) {
+	// Check if it's a docker.io image without namespace
+	if regexp.MustCompile(`^docker\.io/[^/]+`).MatchString(image) {
+		// Extract the image name after docker.io/
+		parts := regexp.MustCompile(`^docker\.io/(.+)`).FindStringSubmatch(image)
+		if len(parts) > 1 && !regexp.MustCompile(`/`).MatchString(parts[1]) {
+			// No slash in the remaining part means it's an official image
+			return "docker.io/library/" + parts[1]
+		}
+	}
+
+	// If image already has a registry, return as-is
+	if regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9-_.]*\.[a-zA-Z]{2,}/`).MatchString(image) {
 		return image
 	}
 

@@ -178,6 +178,30 @@ var _ = Describe("PodMutator", func() {
 			result := mutator.mutateImage(ctx, "nginx:latest", rules, pod)
 			Expect(result).To(Equal("special-registry/nginx"))
 		})
+
+		It("should add library prefix for docker.io images without namespace", func() {
+			rules := []compiledRule{
+				{
+					rule: devv1alpha1.Rule{
+						Match:   `^docker\.io/(.*)`,
+						Replace: `toto.dkr.ecr.eu-west-1.amazonaws.com/dockerhub/$1`,
+					},
+					regex:   regexp.MustCompile(`^docker\.io/(.*)`),
+					replace: `toto.dkr.ecr.eu-west-1.amazonaws.com/dockerhub/$1`,
+				},
+			}
+
+			pod := &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-pod",
+					Namespace: "default",
+				},
+			}
+
+			// Test avec une image docker.io sans namespace
+			result := mutator.mutateImage(ctx, "docker.io/caddy:2.7.6-alpine", rules, pod)
+			Expect(result).To(Equal("toto.dkr.ecr.eu-west-1.amazonaws.com/dockerhub/library/caddy:2.7.6-alpine"))
+		})
 	})
 })
 
@@ -226,6 +250,21 @@ func TestNormalizeImage(t *testing.T) {
 			name:     "localhost with port",
 			input:    "localhost:5000/myimage",
 			expected: "localhost:5000/myimage",
+		},
+		{
+			name:     "public ecr aws image",
+			input:    "public.ecr.aws/orga/jeffail/benthos",
+			expected: "public.ecr.aws/orga/jeffail/benthos",
+		},
+		{
+			name:     "docker.io image without namespace",
+			input:    "docker.io/caddy:2.7.6-alpine",
+			expected: "docker.io/library/caddy:2.7.6-alpine",
+		},
+		{
+			name:     "docker.io image with namespace",
+			input:    "docker.io/myorg/myimage:latest",
+			expected: "docker.io/myorg/myimage:latest",
 		},
 	}
 
