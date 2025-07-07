@@ -97,8 +97,8 @@ Example: `feat: add support for ghcr.io registry`
 Releases are automated via GitHub Actions when a tag is pushed:
 
 ```bash
-git tag -a v0.2.0 -m "Release v0.2.0"
-git push origin v0.2.0
+git tag -a v0.3.0 -m "Release v0.3.0"
+git push origin v0.3.0
 ```
 
 This will:
