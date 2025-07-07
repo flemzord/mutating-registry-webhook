@@ -201,6 +201,10 @@ var _ = Describe("PodMutator", func() {
 			// Test avec une image docker.io sans namespace
 			result := mutator.mutateImage(ctx, "docker.io/caddy:2.7.6-alpine", rules, pod)
 			Expect(result).To(Equal("toto.dkr.ecr.eu-west-1.amazonaws.com/dockerhub/library/caddy:2.7.6-alpine"))
+
+			// Test avec une image sans préfixe docker.io
+			result2 := mutator.mutateImage(ctx, "caddy:2.7.6-alpine", rules, pod)
+			Expect(result2).To(Equal("toto.dkr.ecr.eu-west-1.amazonaws.com/dockerhub/library/caddy:2.7.6-alpine"))
 		})
 	})
 })
