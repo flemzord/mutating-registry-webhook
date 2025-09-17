@@ -27,7 +27,6 @@ import (
 	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
-	"github.com/prometheus/client_golang/prometheus/promauto"
 	corev1 "k8s.io/api/core/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log"
@@ -59,28 +58,28 @@ type rulesCache struct {
 
 // Prometheus metrics
 var (
-	mutationsTotal = promauto.NewCounterVec(prometheus.CounterOpts{
+	mutationsTotal = prometheus.NewCounterVec(prometheus.CounterOpts{
 		Name: "registry_rewriter_mutations_total",
 		Help: "Total number of mutations performed",
 	}, []string{"namespace", "source_registry", "target_registry", "status"})
 
-	mutationDuration = promauto.NewHistogramVec(prometheus.HistogramOpts{
+	mutationDuration = prometheus.NewHistogramVec(prometheus.HistogramOpts{
 		Name:    "registry_rewriter_mutation_duration_seconds",
 		Help:    "Duration of mutation operations",
 		Buckets: prometheus.DefBuckets,
 	}, []string{"namespace"})
 
-	rulesCount = promauto.NewGauge(prometheus.GaugeOpts{
+	rulesCount = prometheus.NewGauge(prometheus.GaugeOpts{
 		Name: "registry_rewriter_rules_count",
 		Help: "Current number of active rules",
 	})
 
-	cacheHits = promauto.NewCounter(prometheus.CounterOpts{
+	cacheHits = prometheus.NewCounter(prometheus.CounterOpts{
 		Name: "registry_rewriter_cache_hits_total",
 		Help: "Total number of cache hits",
 	})
 
-	cacheMisses = promauto.NewCounter(prometheus.CounterOpts{
+	cacheMisses = prometheus.NewCounter(prometheus.CounterOpts{
 		Name: "registry_rewriter_cache_misses_total",
 		Help: "Total number of cache misses",
 	})
