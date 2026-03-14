@@ -58,4 +58,3 @@ coverage.html
 # Local development
 kubebuilder
 local-bin/dist/
-.github/workflows/test-chart.yml
