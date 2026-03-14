@@ -2,7 +2,7 @@
 # Refer to https://github.com/GoogleContainerTools/distroless for more details
 FROM gcr.io/distroless/static:nonroot
 WORKDIR /
-COPY manager .
+COPY bin/manager .
 USER 65532:65532
 
 ENTRYPOINT ["/manager"]
