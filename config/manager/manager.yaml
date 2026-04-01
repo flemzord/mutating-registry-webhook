@@ -21,7 +21,7 @@ spec:
     matchLabels:
       control-plane: controller-manager
       app.kubernetes.io/name: mutating-registry-webhook
-  replicas: 1
+  replicas: 2
   template:
     metadata:
       annotations:
@@ -61,7 +61,6 @@ spec:
       - command:
         - /manager
         args:
-          - --leader-elect
           - --health-probe-bind-address=:8081
         image: controller:latest
         name: manager
