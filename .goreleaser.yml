@@ -31,7 +31,7 @@ dockers:
   - image_templates:
       - "ghcr.io/flemzord/mutating-registry-webhook:{{ .Version }}-amd64"
     use: buildx
-    dockerfile: Dockerfile
+    dockerfile: Dockerfile.goreleaser
     goos: linux
     goarch: amd64
     build_flag_templates:
@@ -44,7 +44,7 @@ dockers:
   - image_templates:
       - "ghcr.io/flemzord/mutating-registry-webhook:{{ .Version }}-arm64"
     use: buildx
-    dockerfile: Dockerfile
+    dockerfile: Dockerfile.goreleaser
     goos: linux
     goarch: arm64
     build_flag_templates:
