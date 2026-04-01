@@ -44,6 +44,9 @@ help: ## Display this help.
 
 ##@ Development
 
+.PHONY: pre-commit
+pre-commit: fmt vet lint generate manifests ## Run all checks before committing.
+
 .PHONY: manifests
 manifests: controller-gen ## Generate WebhookConfiguration, ClusterRole and CustomResourceDefinition objects.
 	$(CONTROLLER_GEN) rbac:roleName=manager-role crd webhook paths="./..." output:crd:artifacts:config=config/crd/bases

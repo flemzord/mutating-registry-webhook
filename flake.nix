@@ -35,7 +35,6 @@
             ginkgo
             go_1_26
             gotools
-            just
             kind
             kubectl
             kubernetes-helm

@@ -19,22 +19,19 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Setup Go
-        uses: actions/setup-go@v6
-        with:
-          go-version-file: go.mod
-
-      - name: Setup Helm
-        uses: azure/setup-helm@v4
+      - name: Setup Env
+        uses: ./.github/actions/default
 
       - name: Install Kubebuilder
         run: |
-          curl -L -o kubebuilder "https://go.kubebuilder.io/dl/latest/$(go env GOOS)/$(go env GOARCH)"
-          chmod +x kubebuilder && sudo mv kubebuilder /usr/local/bin/
+          nix develop --command bash -c '
+            curl -L -o kubebuilder "https://go.kubebuilder.io/dl/latest/$(go env GOOS)/$(go env GOARCH)"
+            chmod +x kubebuilder && sudo mv kubebuilder /usr/local/bin/
+          '
 
       - name: Generate Helm chart
-        run: |
-          kubebuilder edit --plugins=helm/v2-alpha
+        run: >
+          nix develop --command kubebuilder edit --plugins=helm/v2-alpha
 
       - name: Setup QEMU
         uses: docker/setup-qemu-action@v3

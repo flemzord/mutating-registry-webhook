@@ -6,25 +6,32 @@ on:
   pull_request:
     branches: [main]
 
-env:
-  KIND_VERSION: v0.27.0
-  KUBERNETES_VERSION: v1.32.0
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
 
 jobs:
-  lint:
-    name: Lint
+  dirty:
+    name: Check Dirty
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
         uses: actions/checkout@v6
 
-      - name: Setup Go
-        uses: actions/setup-go@v6
-        with:
-          go-version-file: "go.mod"
+      - name: Setup Env
+        uses: ./.github/actions/default
 
-      - name: Run golangci-lint
-        run: make lint
+      - name: Run pre-commit checks
+        run: >
+          nix develop --command make pre-commit
+
+      - name: Check for uncommitted changes
+        run: |
+          if [ -n "$(git status --porcelain)" ]; then
+            echo "Uncommitted changes detected. Please run 'make pre-commit' and commit the changes."
+            git diff
+            exit 1
+          fi
 
   test:
     name: Unit Tests
@@ -33,43 +40,17 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v6
 
-      - name: Setup Go
-        uses: actions/setup-go@v6
-        with:
-          go-version-file: "go.mod"
+      - name: Setup Env
+        uses: ./.github/actions/default
 
       - name: Run tests
-        run: |
-          go mod download
-          make test
+        run: >
+          nix develop --command make test
 
       - name: Upload coverage
         uses: codecov/codecov-action@v3
         with:
           file: ./cover.out
-
-  manifests:
-    name: Verify Manifests
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v6
-
-      - name: Setup Go
-        uses: actions/setup-go@v6
-        with:
-          go-version-file: "go.mod"
-
-      - name: Generate manifests
-        run: make manifests
-
-      - name: Check for uncommitted changes
-        run: |
-          if [ -n "$(git status --porcelain)" ]; then
-            echo "Uncommitted changes detected. Please run 'make manifests' and commit the changes."
-            git diff
-            exit 1
-          fi
 
   helm-lint:
     name: Helm Chart Lint
@@ -78,30 +59,27 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v6
 
-      - name: Setup Go
-        uses: actions/setup-go@v6
-        with:
-          go-version-file: "go.mod"
-
-      - name: Setup Helm
-        uses: azure/setup-helm@v4
+      - name: Setup Env
+        uses: ./.github/actions/default
 
       - name: Install Kubebuilder
         run: |
-          curl -L -o kubebuilder "https://go.kubebuilder.io/dl/latest/$(go env GOOS)/$(go env GOARCH)"
-          chmod +x kubebuilder && sudo mv kubebuilder /usr/local/bin/
+          nix develop --command bash -c '
+            curl -L -o kubebuilder "https://go.kubebuilder.io/dl/latest/$(go env GOOS)/$(go env GOARCH)"
+            chmod +x kubebuilder && sudo mv kubebuilder /usr/local/bin/
+          '
 
       - name: Generate Helm chart
-        run: |
-          kubebuilder edit --plugins=helm/v2-alpha
+        run: >
+          nix develop --command kubebuilder edit --plugins=helm/v2-alpha
 
       - name: Lint Helm chart
-        run: |
-          helm lint dist/chart
+        run: >
+          nix develop --command helm lint dist/chart
 
       - name: Template Helm chart
-        run: |
-          helm template test dist/chart
+        run: >
+          nix develop --command helm template test dist/chart
 
   e2e-kind:
     name: E2E Tests (Kind)
@@ -110,20 +88,12 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v6
 
-      - name: Setup Go
-        uses: actions/setup-go@v6
-        with:
-          go-version-file: "go.mod"
-
-      - name: Setup Kind
-        run: |
-          curl -Lo ./kind https://kind.sigs.k8s.io/dl/${KIND_VERSION}/kind-linux-amd64
-          chmod +x ./kind
-          sudo mv ./kind /usr/local/bin/kind
+      - name: Setup Env
+        uses: ./.github/actions/default
 
       - name: Run E2E tests
-        run: |
-          make test-e2e
+        run: >
+          nix develop --command make test-e2e
 
       - name: Collect logs on failure
         if: failure()
