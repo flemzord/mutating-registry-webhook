@@ -22,6 +22,7 @@ import (
 
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/client-go/util/retry"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
@@ -61,14 +62,25 @@ func (r *RulesWatcher) Reconcile(ctx context.Context, req reconcile.Request) (re
 
 	// Update status if the resource exists
 	if err == nil {
-		before := rule.DeepCopy()
-		rule.Status.ObservedGeneration = rule.Generation
-		rule.Status.Ready = rulesAreValid(rule.Spec.Rules)
-		rule.Status.RuleCount = len(rule.Spec.Rules)
+		status := devv1alpha1.RegistryRewriteRuleStatus{
+			ObservedGeneration: rule.Generation,
+			Ready:              rulesAreValid(rule.Spec.Rules),
+			RuleCount:          len(rule.Spec.Rules),
+		}
 		now := r.now()
-		rule.Status.LastUpdateTime = &now
+		status.LastUpdateTime = &now
 
-		if err := r.Status().Patch(ctx, rule, client.MergeFrom(before)); err != nil {
+		if err := retry.RetryOnConflict(retry.DefaultRetry, func() error {
+			latest := &devv1alpha1.RegistryRewriteRule{}
+			if err := r.Get(ctx, req.NamespacedName, latest); err != nil {
+				if errors.IsNotFound(err) {
+					return nil
+				}
+				return err
+			}
+			latest.Status = status
+			return r.Status().Update(ctx, latest)
+		}); err != nil {
 			logger.Error(err, "Failed to update RegistryRewriteRule status", "name", req.Name)
 			return reconcile.Result{}, err
 		}

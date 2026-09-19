@@ -68,6 +68,7 @@ type RegistryRewriteRuleStatus struct {
 	ObservedGeneration int64 `json:"observedGeneration,omitempty"`
 
 	// Ready indicates if the rules are ready to be used
+	// +kubebuilder:validation:Optional
 	Ready bool `json:"ready"`
 
 	// RuleCount is the number of rules in this resource
