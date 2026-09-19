@@ -25,6 +25,8 @@ assert_rendered 'path: /healthz$' 'the liveness probe'
 assert_rendered 'path: /readyz$' 'the readiness probe'
 assert_rendered 'pods/ephemeralcontainers$' 'ephemeral container admission'
 assert_rendered '--leader-elect$' 'leader election for the two-replica controller'
+assert_rendered 'coordination.k8s.io$' 'leader-election API permissions'
+assert_rendered '  - leases$' 'leader-election lease permissions'
 
 if grep -Eq 'image: "?controller:' "${rendered_file}"; then
   echo 'Rendered chart still references the local controller image' >&2
