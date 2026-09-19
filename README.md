@@ -39,7 +39,7 @@ kubectl apply -f https://github.com/cert-manager/cert-manager/releases/download/
 
 2. **Install the webhook**:
 ```sh
-kubectl apply -f https://github.com/flemzord/mutating-registry-webhook/releases/download/v0.5.0/install.yaml
+kubectl apply -f https://github.com/flemzord/mutating-registry-webhook/releases/download/v1.0.0/install.yaml
 ```
 
 3. **Create a RegistryRewriteRule**:

@@ -45,8 +45,8 @@ help: ## Display this help.
 pre-commit: fmt vet lint generate manifests ## Run all checks before committing.
 
 .PHONY: vulncheck
-vulncheck: govulncheck ## Check Go dependencies and reachable code for known vulnerabilities.
-	$(GOVULNCHECK) ./...
+vulncheck: govulncheck ## Check imported Go packages for known vulnerabilities.
+	$(GOVULNCHECK) -scan package ./...
 
 .PHONY: manifests
 manifests: controller-gen ## Generate WebhookConfiguration, ClusterRole and CustomResourceDefinition objects.
