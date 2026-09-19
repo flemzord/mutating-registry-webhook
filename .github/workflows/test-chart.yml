@@ -12,8 +12,6 @@ jobs:
   test-chart:
     name: Helm Chart Install
     runs-on: ubuntu-latest
-    env:
-      IMG: controller:latest
     steps:
       - name: Checkout code
         uses: actions/checkout@v6
@@ -29,8 +27,8 @@ jobs:
 
       - name: Build and load controller image
         run: |
-          nix develop --command make docker-build IMG=${IMG}
-          nix develop --command kind load docker-image ${IMG}
+          nix develop --command make docker-build IMG=controller:latest
+          nix develop --command kind load docker-image controller:latest
 
       - name: Install cert-manager
         run: |
@@ -45,7 +43,7 @@ jobs:
             --timeout 5m
 
       - name: Deploy manager via Helm
-        run: nix develop --command make helm-deploy IMG=${IMG}
+        run: nix develop --command make helm-deploy IMG=controller:latest
 
       - name: Verify manager rollout
         run: >
