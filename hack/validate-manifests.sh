@@ -13,7 +13,7 @@ helm template validation "${chart_dir}" > "${rendered_file}"
 assert_rendered() {
   local pattern="$1"
   local description="$2"
-  if ! grep -Eq "${pattern}" "${rendered_file}"; then
+  if ! grep -Eq -- "${pattern}" "${rendered_file}"; then
     echo "Rendered chart is missing ${description}" >&2
     exit 1
   fi
@@ -24,6 +24,7 @@ assert_rendered 'image: "ghcr.io/flemzord/mutating-registry-webhook:[^"]+"' 'the
 assert_rendered 'path: /healthz$' 'the liveness probe'
 assert_rendered 'path: /readyz$' 'the readiness probe'
 assert_rendered 'pods/ephemeralcontainers$' 'ephemeral container admission'
+assert_rendered '--leader-elect$' 'leader election for the two-replica controller'
 
 if grep -Eq 'image: "?controller:' "${rendered_file}"; then
   echo 'Rendered chart still references the local controller image' >&2

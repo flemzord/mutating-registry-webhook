@@ -68,7 +68,7 @@ type RegistryRewriteRuleStatus struct {
 	ObservedGeneration int64 `json:"observedGeneration,omitempty"`
 
 	// Ready indicates if the rules are ready to be used
-	Ready bool `json:"ready,omitempty"`
+	Ready bool `json:"ready"`
 
 	// RuleCount is the number of rules in this resource
 	RuleCount int `json:"ruleCount,omitempty"`

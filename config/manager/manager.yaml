@@ -62,6 +62,7 @@ spec:
         - /manager
         args:
           - --health-probe-bind-address=:8081
+          - --leader-elect
         image: controller:latest
         name: manager
         ports: []
