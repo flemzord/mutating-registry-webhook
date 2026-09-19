@@ -61,13 +61,14 @@ func (r *RulesWatcher) Reconcile(ctx context.Context, req reconcile.Request) (re
 
 	// Update status if the resource exists
 	if err == nil {
+		before := rule.DeepCopy()
 		rule.Status.ObservedGeneration = rule.Generation
 		rule.Status.Ready = rulesAreValid(rule.Spec.Rules)
 		rule.Status.RuleCount = len(rule.Spec.Rules)
 		now := r.now()
 		rule.Status.LastUpdateTime = &now
 
-		if err := r.Status().Update(ctx, rule); err != nil {
+		if err := r.Status().Patch(ctx, rule, client.MergeFrom(before)); err != nil {
 			logger.Error(err, "Failed to update RegistryRewriteRule status", "name", req.Name)
 			return reconcile.Result{}, err
 		}
