@@ -123,14 +123,3 @@ changelog:
       order: 3
     - title: Others
       order: 999
-
-# Additional build hooks
-before:
-  hooks:
-    - go mod tidy
-    - go generate ./...
-    - make manifests
-    - make build-installer IMG=ghcr.io/flemzord/mutating-registry-webhook:{{ .Version }}
-    - ./hack/update-chart-version.sh {{ .Version }}
-    - helm package dist/chart --destination dist/
-

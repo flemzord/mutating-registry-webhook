@@ -33,16 +33,16 @@
         let
           stablePackages = with pkgs; [
             ginkgo
-            go_1_26
             gotools
             kind
             kubectl
             kubernetes-helm
-            kustomize_4
             setup-envtest
           ];
           unstablePackages = with pkgs-unstable; [
+            go_1_26
             golangci-lint
+            kustomize
           ];
         in
         {

@@ -22,6 +22,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -256,6 +257,47 @@ var _ = Describe("Manager", Ordered, func() {
 			Expect(metricsOutput).To(ContainSubstring(
 				"controller_runtime_reconcile_total",
 			))
+		})
+
+		It("should rewrite a Pod image through the Kubernetes admission API", func() {
+			const ruleName = "e2e-rewrite"
+			rule := `apiVersion: dev.flemzord.fr/v1alpha1
+kind: RegistryRewriteRule
+metadata:
+  name: e2e-rewrite
+spec:
+  rules:
+    - match: '^docker\.io/(.*)'
+      replace: 'e2e-cache.invalid/dockerhub/$1'
+`
+
+			By("creating a rewrite rule")
+			cmd := exec.Command("kubectl", "apply", "-f", "-")
+			cmd.Stdin = strings.NewReader(rule)
+			_, err := utils.Run(cmd)
+			Expect(err).NotTo(HaveOccurred())
+
+			DeferCleanup(func() {
+				cmd := exec.Command("kubectl", "delete", "registryrewriterule", ruleName, "--ignore-not-found")
+				_, _ = utils.Run(cmd)
+			})
+
+			By("waiting for the rule generation to be ready")
+			Eventually(func() (string, error) {
+				cmd := exec.Command("kubectl", "get", "registryrewriterule", ruleName,
+					"-o", "jsonpath={.status.ready}")
+				return utils.Run(cmd)
+			}).Should(Equal("true"))
+
+			By("submitting a Pod in server-side dry-run mode")
+			Eventually(func() (string, error) {
+				cmd := exec.Command("kubectl", "run", "rewrite-e2e",
+					"--image=nginx:1.27",
+					"--restart=Never",
+					"--dry-run=server",
+					"-o", "jsonpath={.spec.containers[0].image}")
+				return utils.Run(cmd)
+			}).Should(Equal("e2e-cache.invalid/dockerhub/library/nginx:1.27"))
 		})
 
 		// +kubebuilder:scaffold:e2e-webhooks-checks

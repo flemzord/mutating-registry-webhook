@@ -81,8 +81,8 @@ var _ = Describe("PodMutator", func() {
 			}
 			pod = &corev1.Pod{
 				ObjectMeta: metav1.ObjectMeta{
-					Name:      "test-pod",
-					Namespace: "default",
+					Name:      testPodName,
+					Namespace: testNamespace,
 				},
 			}
 		})
@@ -93,7 +93,7 @@ var _ = Describe("PodMutator", func() {
 
 		It("should check namespace conditions", func() {
 			rule.Conditions = &devv1alpha1.RuleConditions{
-				Namespaces: []string{"kube-system", "default"},
+				Namespaces: []string{"kube-system", testNamespace},
 			}
 			Expect(mutator.checkConditions(rule, pod)).To(BeTrue())
 
@@ -103,20 +103,20 @@ var _ = Describe("PodMutator", func() {
 
 		It("should check label conditions", func() {
 			pod.Labels = map[string]string{
-				"app":  "nginx",
-				"team": "platform",
+				testContainerName: testImageName,
+				"team":            "platform",
 			}
 
 			rule.Conditions = &devv1alpha1.RuleConditions{
 				Labels: map[string]string{
-					"app": "nginx",
+					testContainerName: testImageName,
 				},
 			}
 			Expect(mutator.checkConditions(rule, pod)).To(BeTrue())
 
 			rule.Conditions.Labels = map[string]string{
-				"app":  "nginx",
-				"team": "frontend",
+				testContainerName: testImageName,
+				"team":            "frontend",
 			}
 			Expect(mutator.checkConditions(rule, pod)).To(BeFalse())
 		})
@@ -127,18 +127,18 @@ var _ = Describe("PodMutator", func() {
 			rules := []compiledRule{
 				{
 					rule: devv1alpha1.Rule{
-						Match:   `^docker\.io/(.*)`,
-						Replace: `ecr.aws/dockerhub/$1`,
+						Match:   dockerHubMatch,
+						Replace: ecrReplace,
 					},
-					regex:   regexp.MustCompile(`^docker\.io/(.*)`),
-					replace: `ecr.aws/dockerhub/$1`,
+					regex:   regexp.MustCompile(dockerHubMatch),
+					replace: ecrReplace,
 				},
 			}
 
 			pod := &corev1.Pod{
 				ObjectMeta: metav1.ObjectMeta{
-					Name:      "test-pod",
-					Namespace: "default",
+					Name:      testPodName,
+					Namespace: testNamespace,
 				},
 			}
 
@@ -159,19 +159,19 @@ var _ = Describe("PodMutator", func() {
 				},
 				{
 					rule: devv1alpha1.Rule{
-						Match:    `^docker\.io/(.*)`,
-						Replace:  `ecr.aws/dockerhub/$1`,
+						Match:    dockerHubMatch,
+						Replace:  ecrReplace,
 						Priority: 50,
 					},
-					regex:   regexp.MustCompile(`^docker\.io/(.*)`),
-					replace: `ecr.aws/dockerhub/$1`,
+					regex:   regexp.MustCompile(dockerHubMatch),
+					replace: ecrReplace,
 				},
 			}
 
 			pod := &corev1.Pod{
 				ObjectMeta: metav1.ObjectMeta{
-					Name:      "test-pod",
-					Namespace: "default",
+					Name:      testPodName,
+					Namespace: testNamespace,
 				},
 			}
 
@@ -183,18 +183,18 @@ var _ = Describe("PodMutator", func() {
 			rules := []compiledRule{
 				{
 					rule: devv1alpha1.Rule{
-						Match:   `^docker\.io/(.*)`,
+						Match:   dockerHubMatch,
 						Replace: `toto.dkr.ecr.eu-west-1.amazonaws.com/dockerhub/$1`,
 					},
-					regex:   regexp.MustCompile(`^docker\.io/(.*)`),
+					regex:   regexp.MustCompile(dockerHubMatch),
 					replace: `toto.dkr.ecr.eu-west-1.amazonaws.com/dockerhub/$1`,
 				},
 			}
 
 			pod := &corev1.Pod{
 				ObjectMeta: metav1.ObjectMeta{
-					Name:      "test-pod",
-					Namespace: "default",
+					Name:      testPodName,
+					Namespace: testNamespace,
 				},
 			}
 
@@ -217,7 +217,7 @@ func TestNormalizeImage(t *testing.T) {
 	}{
 		{
 			name:     "simple image without registry",
-			input:    "nginx",
+			input:    testImageName,
 			expected: "docker.io/library/nginx",
 		},
 		{
@@ -256,6 +256,21 @@ func TestNormalizeImage(t *testing.T) {
 			expected: "localhost:5000/myimage",
 		},
 		{
+			name:     "hostname registry with port",
+			input:    "registry.example.com:5000/team/myimage:latest",
+			expected: "registry.example.com:5000/team/myimage:latest",
+		},
+		{
+			name:     "IPv4 registry with port",
+			input:    "10.0.0.12:5000/team/myimage:latest",
+			expected: "10.0.0.12:5000/team/myimage:latest",
+		},
+		{
+			name:     "IPv6 registry with port",
+			input:    "[2001:db8::12]:5000/team/myimage:latest",
+			expected: "[2001:db8::12]:5000/team/myimage:latest",
+		},
+		{
 			name:     "public ecr aws image",
 			input:    "public.ecr.aws/orga/jeffail/benthos",
 			expected: "public.ecr.aws/orga/jeffail/benthos",
@@ -277,6 +292,27 @@ func TestNormalizeImage(t *testing.T) {
 			result := normalizeImage(tt.input)
 			if result != tt.expected {
 				t.Errorf("normalizeImage(%q) = %q, want %q", tt.input, result, tt.expected)
+			}
+		})
+	}
+}
+
+func TestExtractRegistry(t *testing.T) {
+	tests := []struct {
+		image    string
+		expected string
+	}{
+		{image: "nginx:latest", expected: "docker.io"},
+		{image: "localhost:5000/team/image", expected: "localhost:5000"},
+		{image: "registry.example.com:5000/team/image", expected: "registry.example.com:5000"},
+		{image: "10.0.0.12:5000/team/image", expected: "10.0.0.12:5000"},
+		{image: "[2001:db8::12]:5000/team/image", expected: "[2001:db8::12]:5000"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.image, func(t *testing.T) {
+			if got := extractRegistry(tt.image); got != tt.expected {
+				t.Fatalf("extractRegistry(%q) = %q, want %q", tt.image, got, tt.expected)
 			}
 		})
 	}

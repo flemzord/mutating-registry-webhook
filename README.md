@@ -19,27 +19,27 @@ This webhook intercepts Pod creation and update requests in your Kubernetes clus
 - 🔒 Secure by default with cert-manager integration
 - 📊 Prometheus metrics support
 - 🎛️ Helm chart for easy deployment
-- 🧪 Comprehensive test coverage
+- 🧪 Unit, manifest-rendering, and Kind end-to-end tests
 
 ## Getting Started
 
 ### Prerequisites
-- go version v1.24.0+
-- docker version 17.03+
-- kubectl version v1.11.3+
-- Access to a Kubernetes v1.11.3+ cluster
-- cert-manager v1.0+ installed in your cluster
+
+- Go 1.25 or newer for local development
+- Docker with BuildKit support for container builds
+- kubectl and access to a Kubernetes 1.33+ cluster
+- cert-manager 1.20 or 1.21 installed in the cluster
 
 ### Quick Start
 
 1. **Install cert-manager** (if not already installed):
 ```sh
-kubectl apply -f https://github.com/cert-manager/cert-manager/releases/download/v1.13.0/cert-manager.yaml
+kubectl apply -f https://github.com/cert-manager/cert-manager/releases/download/v1.21.2/cert-manager.yaml
 ```
 
 2. **Install the webhook**:
 ```sh
-kubectl apply -f https://github.com/flemzord/mutating-registry-webhook/releases/download/v0.4.0/install.yaml
+kubectl apply -f https://github.com/flemzord/mutating-registry-webhook/releases/download/v0.5.0/install.yaml
 ```
 
 3. **Create a RegistryRewriteRule**:
@@ -141,23 +141,27 @@ kubectl apply -f https://raw.githubusercontent.com/<org>/mutating-registry-webho
 
 ### By providing a Helm Chart
 
-1. Build the chart using the optional helm plugin
+1. Generate the chart from the current Kustomize manifests:
 
 ```sh
-kubebuilder edit --plugins=helm/v2-alpha
+make helm-chart
 ```
 
-2. See that a chart was generated under 'dist/chart', and users
-can obtain this solution from there.
+2. Validate both distribution formats before publishing:
 
-**NOTE:** If you change the project, you need to update the Helm Chart
-using the same command above to sync the latest changes. Furthermore,
-if you create webhooks, you need to use the above command with
-the '--force' flag and manually ensure that any custom configuration
-previously added to 'dist/chart/values.yaml' or 'dist/chart/templates/manager/manager.yaml'
-is manually re-applied afterwards.
+```sh
+make validate-manifests
+```
+
+The generated chart lives under `dist/chart`. Its production defaults are
+applied by `hack/configure-helm-chart.sh`, so use the Make target instead of
+calling the Kubebuilder plugin directly.
 
 ## Examples
+
+`match` and `replace` are literal CRD values. The webhook does not expand shell
+environment variables in them, so put the complete registry hostname in each
+replacement.
 
 ### Basic Docker Hub to ECR
 
@@ -169,9 +173,9 @@ metadata:
 spec:
   rules:
     - match: '^docker\.io/(.*)'
-      replace: '${ECR_REGISTRY}/dockerhub/$1'
+      replace: '123456789012.dkr.ecr.us-east-1.amazonaws.com/dockerhub/$1'
     - match: '^([^/]+/[^/]+)$'  # nginx:latest becomes docker.io/nginx:latest
-      replace: '${ECR_REGISTRY}/dockerhub/$1'
+      replace: '123456789012.dkr.ecr.us-east-1.amazonaws.com/dockerhub/$1'
 ```
 
 ### Multiple Registries
@@ -189,15 +193,15 @@ spec:
     
     # Google Container Registry
     - match: '^gcr\.io/([^/]+)/(.+)'
-      replace: '${ECR_REGISTRY}/gcr/$1/$2'
+      replace: '123456789012.dkr.ecr.us-east-1.amazonaws.com/gcr/$1/$2'
     
     # Quay.io
     - match: '^quay\.io/(.*)'
-      replace: '${ECR_REGISTRY}/quay/$1'
+      replace: '123456789012.dkr.ecr.us-east-1.amazonaws.com/quay/$1'
     
     # GitHub Container Registry
     - match: '^ghcr\.io/(.*)'
-      replace: '${ECR_REGISTRY}/ghcr/$1'
+      replace: '123456789012.dkr.ecr.us-east-1.amazonaws.com/ghcr/$1'
 ```
 
 ### Namespace-Specific Rules
@@ -210,7 +214,7 @@ metadata:
 spec:
   rules:
     - match: '^docker\.io/(.*)'
-      replace: '${PROD_REGISTRY}/$1'
+      replace: 'registry.example.com/production-cache/$1'
       conditions:
         namespaces: ["production", "staging"]
 ```
@@ -225,7 +229,7 @@ metadata:
 spec:
   rules:
     - match: '^docker\.io/(.*)'
-      replace: '${TEAM_REGISTRY}/$1'
+      replace: 'registry.example.com/team-cache/$1'
       conditions:
         labels:
           team: "platform"
@@ -239,7 +243,7 @@ The webhook consists of:
 1. **CRD (RegistryRewriteRule)**: Defines rewrite rules with regex patterns
 2. **Mutating Webhook**: Intercepts Pod creation/update and applies rules
 3. **Rules Controller**: Watches for rule changes and updates the cache
-4. **In-Memory Cache**: Provides O(1) rule lookup performance
+4. **In-Memory Cache**: Avoids Kubernetes API reads on the admission path
 
 ## Troubleshooting
 
@@ -268,10 +272,10 @@ metadata:
 
 ## Performance
 
-- Rule compilation: O(n) on startup/rule change
-- Image mutation: O(1) with cached rules
-- Benchmarks: ~0.7μs per image mutation
-- Memory usage: ~50MB base + rules
+- Rule compilation is performed when the cache is loaded or invalidated.
+- Each image is checked against the cached, applicable regular-expression rules.
+- Admission latency therefore grows with the number of applicable rules; the cache
+  removes Kubernetes API latency but does not make rule evaluation constant time.
 
 ## Contributing
 
@@ -296,4 +300,3 @@ distributed under the License is distributed on an "AS IS" BASIS,
 WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 See the License for the specific language governing permissions and
 limitations under the License.
-

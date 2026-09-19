@@ -23,6 +23,7 @@ import (
 	"net/http"
 	"regexp"
 	"sort"
+	"strings"
 	"sync"
 	"time"
 
@@ -42,6 +43,7 @@ type PodMutator struct {
 	decoder         admission.Decoder
 	rulesCache      *rulesCache
 	rulesCacheMutex sync.RWMutex
+	cacheGeneration uint64
 }
 
 // compiledRule represents a compiled regex rule
@@ -49,6 +51,8 @@ type compiledRule struct {
 	rule    devv1alpha1.Rule
 	regex   *regexp.Regexp
 	replace string
+	source  string
+	index   int
 }
 
 // rulesCache holds compiled rules
@@ -238,85 +242,88 @@ func (m *PodMutator) checkConditions(rule devv1alpha1.Rule, pod *corev1.Pod) boo
 
 // getRules fetches and compiles all rules
 func (m *PodMutator) getRules(ctx context.Context) ([]compiledRule, error) {
-	m.rulesCacheMutex.RLock()
-	if m.rulesCache != nil && len(m.rulesCache.rules) > 0 {
-		rules := m.rulesCache.rules
-		m.rulesCacheMutex.RUnlock()
-		cacheHits.Inc()
-		return rules, nil
-	}
-	m.rulesCacheMutex.RUnlock()
-	cacheMisses.Inc()
-
-	// Fetch all RegistryRewriteRule resources
-	ruleList := &devv1alpha1.RegistryRewriteRuleList{}
-	if err := m.Client.List(ctx, ruleList); err != nil {
-		return nil, fmt.Errorf("failed to list RegistryRewriteRule: %w", err)
-	}
-
-	// Compile all rules
-	var compiledRules []compiledRule
-	for _, rr := range ruleList.Items {
-		for _, rule := range rr.Spec.Rules {
-			regex, err := regexp.Compile(rule.Match)
-			if err != nil {
-				log.FromContext(ctx).Error(err, "Failed to compile regex", "rule", rr.Name, "match", rule.Match)
-				continue
-			}
-			compiledRules = append(compiledRules, compiledRule{
-				rule:    rule,
-				regex:   regex,
-				replace: rule.Replace,
-			})
+	for {
+		m.rulesCacheMutex.RLock()
+		if m.rulesCache != nil {
+			rules := m.rulesCache.rules
+			m.rulesCacheMutex.RUnlock()
+			cacheHits.Inc()
+			return rules, nil
 		}
+		generation := m.cacheGeneration
+		m.rulesCacheMutex.RUnlock()
+		cacheMisses.Inc()
+
+		// Fetch all RegistryRewriteRule resources outside the cache lock. A
+		// generation check below prevents this snapshot from restoring rules
+		// invalidated while the list request was in flight.
+		ruleList := &devv1alpha1.RegistryRewriteRuleList{}
+		if err := m.Client.List(ctx, ruleList); err != nil {
+			return nil, fmt.Errorf("failed to list RegistryRewriteRule: %w", err)
+		}
+
+		var compiledRules []compiledRule
+		for _, rr := range ruleList.Items {
+			for index, rule := range rr.Spec.Rules {
+				regex, err := regexp.Compile(rule.Match)
+				if err != nil {
+					log.FromContext(ctx).Error(err, "Failed to compile regex", "rule", rr.Name, "match", rule.Match)
+					continue
+				}
+				compiledRules = append(compiledRules, compiledRule{
+					rule:    rule,
+					regex:   regex,
+					replace: rule.Replace,
+					source:  rr.Name,
+					index:   index,
+				})
+			}
+		}
+
+		sort.Slice(compiledRules, func(i, j int) bool {
+			if compiledRules[i].rule.Priority != compiledRules[j].rule.Priority {
+				return compiledRules[i].rule.Priority > compiledRules[j].rule.Priority
+			}
+			if compiledRules[i].source != compiledRules[j].source {
+				return compiledRules[i].source < compiledRules[j].source
+			}
+			return compiledRules[i].index < compiledRules[j].index
+		})
+
+		m.rulesCacheMutex.Lock()
+		if generation != m.cacheGeneration {
+			m.rulesCacheMutex.Unlock()
+			continue
+		}
+		m.rulesCache = &rulesCache{rules: compiledRules}
+		m.rulesCacheMutex.Unlock()
+
+		rulesCount.Set(float64(len(compiledRules)))
+		return compiledRules, nil
 	}
-
-	// Sort by priority (higher first)
-	sort.Slice(compiledRules, func(i, j int) bool {
-		return compiledRules[i].rule.Priority > compiledRules[j].rule.Priority
-	})
-
-	// Update cache
-	m.rulesCacheMutex.Lock()
-	m.rulesCache = &rulesCache{rules: compiledRules}
-	m.rulesCacheMutex.Unlock()
-
-	// Update metrics
-	rulesCount.Set(float64(len(compiledRules)))
-
-	return compiledRules, nil
 }
 
 // normalizeImage adds docker.io prefix to images without registry
 func normalizeImage(image string) string {
-	// If it's a localhost image, return as-is
-	if regexp.MustCompile(`^localhost(:[0-9]+)?/`).MatchString(image) {
-		return image
-	}
-
-	// Check if it's a docker.io image without namespace
-	if regexp.MustCompile(`^docker\.io/[^/]+`).MatchString(image) {
-		// Extract the image name after docker.io/
-		parts := regexp.MustCompile(`^docker\.io/(.+)`).FindStringSubmatch(image)
-		if len(parts) > 1 && !regexp.MustCompile(`/`).MatchString(parts[1]) {
-			// No slash in the remaining part means it's an official image
-			return "docker.io/library/" + parts[1]
+	first, remainder, hasSlash := strings.Cut(image, "/")
+	if hasSlash && isRegistryComponent(first) {
+		if first == "docker.io" && !strings.Contains(remainder, "/") {
+			return "docker.io/library/" + remainder
 		}
-	}
-
-	// If image already has a registry, return as-is
-	if regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9-_.]*\.[a-zA-Z]{2,}/`).MatchString(image) {
 		return image
 	}
-
-	// Check if image already has a namespace (contains /)
-	if regexp.MustCompile(`^[^/]+/`).MatchString(image) {
-		// Image has namespace, just add docker.io prefix
+	if hasSlash {
 		return "docker.io/" + image
 	}
-
-	// Image is a Docker official image without namespace, add docker.io/library prefix
 	return "docker.io/library/" + image
+}
+
+// isRegistryComponent follows the Docker image reference convention: the
+// first path component is a registry when it is localhost or contains a dot
+// or colon. The colon form also covers registries with a port and bracketed
+// IPv6 addresses.
+func isRegistryComponent(component string) bool {
+	return component == "localhost" || strings.ContainsAny(component, ".:")
 }
 
 // InjectDecoder injects the decoder
@@ -328,23 +335,16 @@ func (m *PodMutator) InjectDecoder(d admission.Decoder) error {
 // InvalidateCache invalidates the rules cache
 func (m *PodMutator) InvalidateCache() {
 	m.rulesCacheMutex.Lock()
+	m.cacheGeneration++
 	m.rulesCache = nil
 	m.rulesCacheMutex.Unlock()
 }
 
 // extractRegistry extracts the registry from an image name
 func extractRegistry(image string) string {
-	// Handle localhost
-	if regexp.MustCompile(`^localhost(:[0-9]+)?/`).MatchString(image) {
-		return "localhost"
+	first, _, hasSlash := strings.Cut(image, "/")
+	if hasSlash && isRegistryComponent(first) {
+		return first
 	}
-
-	// Check if image has a registry
-	parts := regexp.MustCompile(`^([a-zA-Z0-9][a-zA-Z0-9-_.]*\.[a-zA-Z]{2,})/`).FindStringSubmatch(image)
-	if len(parts) > 1 {
-		return parts[1]
-	}
-
-	// No registry means docker.io
 	return "docker.io"
 }

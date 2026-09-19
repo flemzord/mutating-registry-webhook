@@ -33,10 +33,10 @@ Before creating an issue, please check if it already exists. When creating an is
 ### Development Setup
 
 1. **Prerequisites**:
-   - Go 1.22+
+   - Go 1.25+
    - Docker
    - kubectl
-   - kubebuilder (optional, for API changes)
+   - Helm (for distribution manifest validation)
 
 2. **Clone the repository**:
    ```bash
@@ -62,7 +62,7 @@ Before creating an issue, please check if it already exists. When creating an is
 ### Testing
 
 - **Unit tests**: `make test`
-- **Integration tests**: `make test-integration`
+- **Distribution manifests**: `make validate-manifests`
 - **E2E tests**: `make test-e2e` (requires Kind)
 
 ### Code Style
@@ -97,8 +97,8 @@ Example: `feat: add support for ghcr.io registry`
 Releases are automated via GitHub Actions when a tag is pushed:
 
 ```bash
-git tag -a v0.4.0 -m "Release v0.4.0"
-git push origin v0.4.0
+git tag -a v0.6.0 -m "Release v0.6.0"
+git push origin v0.6.0
 ```
 
 This will:

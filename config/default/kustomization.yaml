@@ -54,6 +54,12 @@ patches:
   target:
     kind: Deployment
 
+# Admit updates to the Pod ephemeralcontainers subresource as well as Pod
+# creates and updates. The mutator already handles ephemeral containers.
+- path: webhook_ephemeralcontainers_patch.yaml
+  target:
+    kind: MutatingWebhookConfiguration
+
 # [CERTMANAGER] To enable cert-manager, uncomment all sections with 'CERTMANAGER' prefix.
 # Uncomment the following replacements to add the cert-manager CA injection annotations
 replacements:

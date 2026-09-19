@@ -22,17 +22,20 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"regexp"
 	"strings"
 
 	"github.com/onsi/ginkgo/v2" // nolint:revive,staticcheck
 )
+
+var bearerTokenPattern = regexp.MustCompile(`(?i)(Authorization: Bearer )[A-Za-z0-9._~-]+`)
 
 const (
 	prometheusOperatorVersion = "v0.77.1"
 	prometheusOperatorURL     = "https://github.com/prometheus-operator/prometheus-operator/" +
 		"releases/download/%s/bundle.yaml"
 
-	certmanagerVersion = "v1.16.3"
+	certmanagerVersion = "v1.21.2"
 	certmanagerURLTmpl = "https://github.com/cert-manager/cert-manager/releases/download/%s/cert-manager.yaml"
 )
 
@@ -50,7 +53,7 @@ func Run(cmd *exec.Cmd) (string, error) {
 	}
 
 	cmd.Env = append(os.Environ(), "GO111MODULE=on")
-	command := strings.Join(cmd.Args, " ")
+	command := redactCommand(strings.Join(cmd.Args, " "))
 	_, _ = fmt.Fprintf(ginkgo.GinkgoWriter, "running: %q\n", command)
 	output, err := cmd.CombinedOutput()
 	if err != nil {
@@ -58,6 +61,10 @@ func Run(cmd *exec.Cmd) (string, error) {
 	}
 
 	return string(output), nil
+}
+
+func redactCommand(command string) string {
+	return bearerTokenPattern.ReplaceAllString(command, "${1}[REDACTED]")
 }
 
 // InstallPrometheusOperator installs the prometheus Operator to be used to export the enabled metrics.

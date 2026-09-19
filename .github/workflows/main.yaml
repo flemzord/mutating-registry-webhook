@@ -36,6 +36,9 @@ jobs:
   test:
     name: Unit Tests
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
     steps:
       - name: Checkout code
         uses: actions/checkout@v6
@@ -48,9 +51,25 @@ jobs:
           nix develop --command make test
 
       - name: Upload coverage
-        uses: codecov/codecov-action@v3
+        uses: codecov/codecov-action@v5
         with:
-          file: ./cover.out
+          files: ./cover.out
+          fail_ci_if_error: true
+          use_oidc: true
+
+  vulnerability-scan:
+    name: Go Vulnerability Scan
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+
+      - name: Setup Env
+        uses: ./.github/actions/default
+
+      - name: Scan reachable Go code
+        run: >
+          nix develop --command make vulncheck
 
   helm-lint:
     name: Helm Chart Lint
@@ -62,24 +81,9 @@ jobs:
       - name: Setup Env
         uses: ./.github/actions/default
 
-      - name: Install Kubebuilder
-        run: |
-          nix develop --command bash -c '
-            curl -L -o kubebuilder "https://go.kubebuilder.io/dl/latest/$(go env GOOS)/$(go env GOARCH)"
-            chmod +x kubebuilder && sudo mv kubebuilder /usr/local/bin/
-          '
-
-      - name: Generate Helm chart
+      - name: Generate and validate distribution manifests
         run: >
-          nix develop --command kubebuilder edit --plugins=helm/v2-alpha
-
-      - name: Lint Helm chart
-        run: >
-          nix develop --command helm lint dist/chart
-
-      - name: Template Helm chart
-        run: >
-          nix develop --command helm template test dist/chart
+          nix develop --command make validate-manifests
 
   e2e-kind:
     name: E2E Tests (Kind)

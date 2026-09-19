@@ -10,60 +10,46 @@ concurrency:
 
 jobs:
   test-chart:
-    name: Helm Chart Test
+    name: Helm Chart Install
     runs-on: ubuntu-latest
+    env:
+      IMG: controller:latest
     steps:
-      - name: Clone the code
+      - name: Checkout code
         uses: actions/checkout@v6
 
       - name: Setup Env
         uses: ./.github/actions/default
 
-      - name: Install Kubebuilder
+      - name: Generate and validate chart
+        run: nix develop --command make validate-manifests
+
+      - name: Create Kind cluster
+        run: nix develop --command kind create cluster
+
+      - name: Build and load controller image
         run: |
-          nix develop --command bash -c '
-            curl -L -o kubebuilder "https://go.kubebuilder.io/dl/latest/$(go env GOOS)/$(go env GOARCH)"
-            chmod +x kubebuilder && sudo mv kubebuilder /usr/local/bin/
-          '
-
-      - name: Generate Helm chart
-        run: >
-          nix develop --command kubebuilder edit --plugins=helm/v2-alpha
-
-      - name: Lint Helm Chart
-        run: >
-          nix develop --command helm lint ./dist/chart
-
-      - name: Template Helm chart
-        run: >
-          nix develop --command helm template test ./dist/chart
-
-      - name: Create kind cluster
-        run: >
-          nix develop --command kind create cluster
-
-      - name: Build and load Docker image
-        run: |
-          nix develop --command make docker-build IMG=controller:latest
-          nix develop --command kind load docker-image controller:latest
+          nix develop --command make docker-build IMG=${IMG}
+          nix develop --command kind load docker-image ${IMG}
 
       - name: Install cert-manager
         run: |
-          nix develop --command bash -c '
-            helm repo add jetstack https://charts.jetstack.io
-            helm repo update
-            helm install cert-manager jetstack/cert-manager \
-              --namespace cert-manager \
-              --create-namespace \
-              --set crds.enabled=true \
-              --wait \
-              --timeout 300s
-          '
+          nix develop --command helm repo add jetstack https://charts.jetstack.io
+          nix develop --command helm repo update
+          nix develop --command helm install cert-manager jetstack/cert-manager \
+            --version v1.21.2 \
+            --namespace cert-manager \
+            --create-namespace \
+            --set crds.enabled=true \
+            --wait \
+            --timeout 5m
 
       - name: Deploy manager via Helm
-        run: >
-          nix develop --command make helm-deploy IMG=controller:latest
+        run: nix develop --command make helm-deploy IMG=${IMG}
 
-      - name: Check Helm release status
+      - name: Verify manager rollout
         run: >
-          nix develop --command make helm-status
+          nix develop --command kubectl rollout status
+          deployment/mutating-registry-webhook-controller-manager
+          --namespace mutating-registry-webhook-system
+          --timeout 2m

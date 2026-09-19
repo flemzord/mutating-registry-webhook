@@ -1,0 +1,3 @@
+- op: add
+  path: /webhooks/0/rules/0/resources/-
+  value: pods/ephemeralcontainers

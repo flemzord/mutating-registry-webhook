@@ -18,6 +18,7 @@ package webhook
 
 import (
 	"context"
+	"regexp"
 
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -33,6 +34,9 @@ type RulesWatcher struct {
 	client.Client
 	Mutator *PodMutator
 }
+
+// +kubebuilder:rbac:groups=dev.flemzord.fr,resources=registryrewriterules,verbs=get;list;watch
+// +kubebuilder:rbac:groups=dev.flemzord.fr,resources=registryrewriterules/status,verbs=get;update;patch
 
 // Reconcile handles changes to RegistryRewriteRule resources
 func (r *RulesWatcher) Reconcile(ctx context.Context, req reconcile.Request) (reconcile.Result, error) {
@@ -58,7 +62,7 @@ func (r *RulesWatcher) Reconcile(ctx context.Context, req reconcile.Request) (re
 	// Update status if the resource exists
 	if err == nil {
 		rule.Status.ObservedGeneration = rule.Generation
-		rule.Status.Ready = true
+		rule.Status.Ready = rulesAreValid(rule.Spec.Rules)
 		rule.Status.RuleCount = len(rule.Spec.Rules)
 		now := r.now()
 		rule.Status.LastUpdateTime = &now
@@ -70,6 +74,15 @@ func (r *RulesWatcher) Reconcile(ctx context.Context, req reconcile.Request) (re
 	}
 
 	return reconcile.Result{}, nil
+}
+
+func rulesAreValid(rules []devv1alpha1.Rule) bool {
+	for _, rule := range rules {
+		if _, err := regexp.Compile(rule.Match); err != nil {
+			return false
+		}
+	}
+	return true
 }
 
 // now returns the current time

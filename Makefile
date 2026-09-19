@@ -1,5 +1,5 @@
 # Image URL to use all building/pushing image targets
-IMG ?= controller:latest
+IMG ?= ghcr.io/flemzord/mutating-registry-webhook:latest
 
 # Get the currently used golang install path (in GOPATH/bin, unless GOBIN is set)
 ifeq (,$(shell go env GOBIN))
@@ -13,9 +13,6 @@ endif
 # scaffolded by default. However, you might want to replace it to use other
 # tools. (i.e. podman)
 CONTAINER_TOOL ?= docker
-
-# Host architecture used to cross-compile manager binaries when building container images.
-HOST_ARCH := $(shell go env GOARCH)
 
 # Setting SHELL to bash allows bash commands to be executed by recipes.
 # Options are set to exit when a recipe line exits non-zero or a piped command fails.
@@ -46,6 +43,10 @@ help: ## Display this help.
 
 .PHONY: pre-commit
 pre-commit: fmt vet lint generate manifests ## Run all checks before committing.
+
+.PHONY: vulncheck
+vulncheck: govulncheck ## Check Go dependencies and reachable code for known vulnerabilities.
+	$(GOVULNCHECK) ./...
 
 .PHONY: manifests
 manifests: controller-gen ## Generate WebhookConfiguration, ClusterRole and CustomResourceDefinition objects.
@@ -117,7 +118,6 @@ run: manifests generate fmt vet ## Run a controller from your host.
 # More info: https://docs.docker.com/develop/develop-images/build_enhancements/
 .PHONY: docker-build
 docker-build: manifests generate fmt vet ## Build docker image with the manager.
-	CGO_ENABLED=0 GOOS=linux GOARCH=$(HOST_ARCH) go build -o bin/manager cmd/main.go
 	$(CONTAINER_TOOL) build -t ${IMG} .
 
 .PHONY: docker-push
@@ -130,22 +130,16 @@ docker-push: ## Push docker image with the manager.
 # - have enabled BuildKit. More info: https://docs.docker.com/develop/develop-images/build_enhancements/
 # - be able to push the image to your registry (i.e. if you do not set a valid value via IMG=<myregistry/image:<tag>> then the export will fail)
 # To adequately provide solutions that are compatible with multiple platforms, you should consider using this option.
-PLATFORMS ?= linux/arm64,linux/amd64,linux/s390x,linux/ppc64le
+PLATFORMS ?= linux/amd64,linux/arm64
 .PHONY: docker-buildx
 docker-buildx: ## Build and push docker image for the manager for cross-platform support
-	# copy existing Dockerfile and insert --platform=${BUILDPLATFORM} into Dockerfile.cross, and preserve the original Dockerfile
-	sed -e '1 s/\(^FROM\)/FROM --platform=\$$\{BUILDPLATFORM\}/; t' -e ' 1,// s//FROM --platform=\$$\{BUILDPLATFORM\}/' Dockerfile > Dockerfile.cross
-	- $(CONTAINER_TOOL) buildx create --name mutating-registry-webhook-builder
-	$(CONTAINER_TOOL) buildx use mutating-registry-webhook-builder
-	- $(CONTAINER_TOOL) buildx build --push --platform=$(PLATFORMS) --tag ${IMG} -f Dockerfile.cross .
-	- $(CONTAINER_TOOL) buildx rm mutating-registry-webhook-builder
-	rm Dockerfile.cross
+	$(CONTAINER_TOOL) buildx build --push --platform=$(PLATFORMS) --tag $(IMG) .
 
 .PHONY: build-installer
 build-installer: manifests generate kustomize ## Generate a consolidated YAML with CRDs and deployment.
 	mkdir -p dist
-	cd config/manager && $(KUSTOMIZE) edit set image controller=${IMG}
-	$(KUSTOMIZE) build config/default > dist/install.yaml
+	$(KUSTOMIZE) build config/default | sed 's|image: controller:latest|image: $(IMG)|' > dist/install.yaml
+	grep -q 'image: $(IMG)' dist/install.yaml
 
 ##@ Deployment
 
@@ -184,15 +178,19 @@ KUSTOMIZE ?= $(LOCALBIN)/kustomize
 CONTROLLER_GEN ?= $(LOCALBIN)/controller-gen
 ENVTEST ?= $(LOCALBIN)/setup-envtest
 GOLANGCI_LINT = $(LOCALBIN)/golangci-lint
+GOVULNCHECK = $(LOCALBIN)/govulncheck
+KUBEBUILDER ?= $(LOCALBIN)/kubebuilder
 
 ## Tool Versions
-KUSTOMIZE_VERSION ?= v5.6.0
-CONTROLLER_TOOLS_VERSION ?= v0.18.0
+KUSTOMIZE_VERSION ?= v5.8.1
+CONTROLLER_TOOLS_VERSION ?= v0.22.0
 #ENVTEST_VERSION is the version of controller-runtime release branch to fetch the envtest setup script (i.e. release-0.20)
 ENVTEST_VERSION ?= $(shell go list -m -f "{{ .Version }}" sigs.k8s.io/controller-runtime | awk -F'[v.]' '{printf "release-%d.%d", $$2, $$3}')
 #ENVTEST_K8S_VERSION is the version of Kubernetes to use for setting up ENVTEST binaries (i.e. 1.31)
 ENVTEST_K8S_VERSION ?= $(shell go list -m -f "{{ .Version }}" k8s.io/api | awk -F'[v.]' '{printf "1.%d", $$3}')
-GOLANGCI_LINT_VERSION ?= v2.1.6
+GOLANGCI_LINT_VERSION ?= v2.13.2
+GOVULNCHECK_VERSION ?= v1.8.0
+KUBEBUILDER_VERSION ?= v4.16.0
 
 .PHONY: kustomize
 kustomize: $(KUSTOMIZE) ## Download kustomize locally if necessary.
@@ -221,6 +219,25 @@ $(ENVTEST): $(LOCALBIN)
 golangci-lint: $(GOLANGCI_LINT) ## Download golangci-lint locally if necessary.
 $(GOLANGCI_LINT): $(LOCALBIN)
 	$(call go-install-tool,$(GOLANGCI_LINT),github.com/golangci/golangci-lint/v2/cmd/golangci-lint,$(GOLANGCI_LINT_VERSION))
+
+.PHONY: govulncheck
+govulncheck: $(GOVULNCHECK) ## Download govulncheck locally if necessary.
+$(GOVULNCHECK): $(LOCALBIN)
+	$(call go-install-tool,$(GOVULNCHECK),golang.org/x/vuln/cmd/govulncheck,$(GOVULNCHECK_VERSION))
+
+.PHONY: kubebuilder
+kubebuilder: $(KUBEBUILDER) ## Download the pinned Kubebuilder CLI if necessary.
+$(KUBEBUILDER): $(LOCALBIN)
+	@[ -f "$(KUBEBUILDER)-$(KUBEBUILDER_VERSION)" ] || { \
+		set -e; \
+		os=$$(go env GOOS); \
+		arch=$$(go env GOARCH); \
+		url="https://github.com/kubernetes-sigs/kubebuilder/releases/download/$(KUBEBUILDER_VERSION)/kubebuilder_$${os}_$${arch}"; \
+		echo "Downloading $${url}"; \
+		curl -fsSL "$${url}" -o "$(KUBEBUILDER)-$(KUBEBUILDER_VERSION)"; \
+		chmod +x "$(KUBEBUILDER)-$(KUBEBUILDER_VERSION)"; \
+	}; \
+	ln -sf "$(KUBEBUILDER)-$(KUBEBUILDER_VERSION)" "$(KUBEBUILDER)"
 
 # go-install-tool will 'go install' any package with custom target and name of binary, if it doesn't exist
 # $1 - target path with name of binary
@@ -251,20 +268,36 @@ HELM_CHART_DIR ?= dist/chart
 ## Additional arguments to pass to helm commands
 HELM_EXTRA_ARGS ?=
 
-.PHONY: install-helm
-install-helm: ## Install the latest version of Helm.
-	@command -v $(HELM) >/dev/null 2>&1 || { \
-		echo "Installing Helm..." && \
-		curl -fsSL https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-4 | bash; \
-	}
+.PHONY: check-helm
+check-helm: ## Verify that Helm is installed.
+	@command -v $(HELM) >/dev/null 2>&1 || { echo "Helm is required: https://helm.sh/docs/intro/install/"; exit 1; }
+
+.PHONY: helm-chart
+helm-chart: build-installer kubebuilder check-helm ## Generate the Helm chart from the current Kustomize manifests.
+	rm -rf $(HELM_CHART_DIR)
+	@manager_kustomization_backup=$$(mktemp); \
+	cp config/manager/kustomization.yaml "$${manager_kustomization_backup}"; \
+	trap 'cp "$${manager_kustomization_backup}" config/manager/kustomization.yaml; rm -f "$${manager_kustomization_backup}"' EXIT; \
+	IMG=$(IMG) $(KUBEBUILDER) edit --plugins=helm/v2-alpha; \
+	./hack/configure-helm-chart.sh $(HELM_CHART_DIR) $(CHART_VERSION)
+
+.PHONY: validate-manifests
+validate-manifests: build-installer helm-chart ## Validate Kustomize and the final rendered Helm chart.
+	./hack/validate-manifests.sh $(HELM_CHART_DIR)
 
 .PHONY: helm-deploy
-helm-deploy: install-helm ## Deploy manager to the K8s cluster via Helm. Specify an image with IMG.
+helm-deploy: check-helm ## Deploy manager to the K8s cluster via Helm. Specify an image with IMG.
+	@test -f "$(HELM_CHART_DIR)/Chart.yaml" || { echo "Run 'make helm-chart' first."; exit 1; }
+	@image='$(IMG)'; repository="$${image}"; tag=''; \
+	if [[ "$${image}" != *@* && "$${image##*/}" == *:* ]]; then \
+		repository="$${image%:*}"; tag="$${image##*:}"; \
+	fi; \
+	image_args=(--set-string "manager.image.repository=$${repository}"); \
+	if [[ -n "$${tag}" ]]; then image_args+=(--set-string "manager.image.tag=$${tag}"); fi; \
 	$(HELM) upgrade --install $(HELM_RELEASE) $(HELM_CHART_DIR) \
 		--namespace $(HELM_NAMESPACE) \
 		--create-namespace \
-		--set manager.image.repository=$${IMG%:*} \
-		--set manager.image.tag=$${IMG##*:} \
+		"$${image_args[@]}" \
 		--wait \
 		--timeout 5m \
 		$(HELM_EXTRA_ARGS)
