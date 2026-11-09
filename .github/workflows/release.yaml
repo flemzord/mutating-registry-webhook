@@ -44,12 +44,18 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Set up release Go toolchain
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+
       - name: Run GoReleaser
         uses: goreleaser/goreleaser-action@v6
         with:
           version: v2.18.1
           args: release --clean
         env:
+          GOTOOLCHAIN: local
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GITHUB_REPOSITORY: ${{ github.repository }}
           GITHUB_REPOSITORY_OWNER: ${{ github.repository_owner }}
