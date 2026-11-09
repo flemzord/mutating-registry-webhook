@@ -1,6 +1,6 @@
 module github.com/flemzord/mutating-registry-webhook
 
-go 1.26.0
+go 1.27.3
 
 require (
 	github.com/evanphx/json-patch/v5 v5.9.11

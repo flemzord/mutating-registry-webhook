@@ -25,7 +25,7 @@ This webhook intercepts Pod creation and update requests in your Kubernetes clus
 
 ### Prerequisites
 
-- Go 1.25 or newer for local development
+- Go 1.27.3 or newer for local development
 - Docker with BuildKit support for container builds
 - kubectl and access to a Kubernetes 1.33+ cluster
 - cert-manager 1.20 or 1.21 installed in the cluster

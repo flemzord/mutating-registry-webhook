@@ -11,6 +11,30 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  release-build:
+    name: Release Build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Set up release Go toolchain
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+
+      - name: Build and verify release binaries
+        uses: goreleaser/goreleaser-action@v6
+        with:
+          version: v2.18.1
+          args: build --snapshot --clean
+        env:
+          GOTOOLCHAIN: local
+
   dirty:
     name: Check Dirty
     runs-on: ubuntu-latest
